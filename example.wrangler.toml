@@ -1,0 +1,10 @@
+name = "name_worker"
+main = "src/index.tsx"
+compatibility_date = "2025-01-01"
+
+[vars]
+HOST = "domain"
+UUID = "c4f9a17e-52db-4b63-9e12-88d4bfd19e07"
+PROXYIP = ""
+SUBNAME = "name"
+ADD = "hosts"

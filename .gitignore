@@ -1,0 +1,8 @@
+dist/
+node_modules/
+.dev.vars
+result
+result-*
+src/styles.generated.css
+.wrangler
+wrangler.toml
