@@ -8,7 +8,7 @@ import {
   MUX_STATUS_NEW,
   MuxFrameParser,
   decodeMuxTarget,
-  handleVlessMux,
+  handleMux,
   serializeMuxDataFrame,
   serializeMuxEndFrame,
 } from '../src/mux';
@@ -241,7 +241,7 @@ describe('Mux session manager', () => {
     };
 
     const outboundFrames: Uint8Array[] = [];
-    const handler = handleVlessMux((frame) => outboundFrames.push(frame), null);
+    const handler = handleMux((frame) => outboundFrames.push(frame), null);
 
     await handler.write(
       new Uint8Array([
@@ -290,7 +290,7 @@ describe('Mux session manager', () => {
     };
 
     const outboundFrames: Uint8Array[] = [];
-    const handler = handleVlessMux((frame) => outboundFrames.push(frame), null);
+    const handler = handleMux((frame) => outboundFrames.push(frame), null);
 
     await handler.write(buildNewFrame(7, 2, 53, 2, encodeDomain('dns.google')));
     expect(connectCalls).toBe(0);

@@ -213,4 +213,16 @@ describe('Trojan subscription output', () => {
     );
     expect(response.status).toBe(101);
   });
+
+  it('handles trojan mux connections to v1.mux.cool', () => {
+    const domainBytes = encoder.encode('v1.mux.cool');
+    const raw = buildHeader({
+      addressType: 3,
+      address: new Uint8Array([domainBytes.length, ...domainBytes]),
+      port: 9527,
+    });
+    const header = parseTrojanHeader(raw, hash);
+    expect(header.hostname).toBe('v1.mux.cool');
+    expect(header.port).toBe(9527);
+  });
 });

@@ -397,7 +397,7 @@ class MuxSessionManager implements DatagramHandler {
   }
 }
 
-export function handleVlessMux(
+export function handleMux(
   reply: (frame: Uint8Array) => void,
   proxyTarget: ProxyTarget | null,
 ): DatagramHandler {

@@ -1,8 +1,10 @@
+import { MUX_HOST, handleMux } from './mux';
 import {
   acceptWebSocket,
   bytesEqual,
   concat,
   queryDoh,
+  resolveProxyTarget,
   type DatagramFactory,
   type Env,
   type RequestParser,
@@ -287,17 +289,19 @@ export async function handleTrojanWS(request: Request, env: Env): Promise<Respon
   }
 
   const expectedHash = trojanPasswordHash(password);
+  const proxyTarget = resolveProxyTarget(new URL(request.url), env);
 
   const parse: RequestParser = (chunk) => {
     const header = parseTrojanHeader(chunk, expectedHash);
     const isUdp = header.command === CMD_UDP;
+    const isMux = header.hostname === MUX_HOST;
 
     return {
       hostname: header.hostname,
       port: header.port,
       payload: header.payload,
       responseHeader: new Uint8Array(0),
-      datagram: isUdp ? createTrojanDnsProxy : null,
+      datagram: isUdp ? createTrojanDnsProxy : isMux ? (reply) => handleMux(reply, proxyTarget) : null,
     };
   };
 

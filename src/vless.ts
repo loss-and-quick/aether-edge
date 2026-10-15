@@ -1,4 +1,4 @@
-import { MUX_HOST, handleVlessMux } from './mux';
+import { MUX_HOST, handleMux } from './mux';
 import {
   acceptWebSocket,
   concat,
@@ -206,7 +206,7 @@ export async function handleVlessWS(request: Request, env: Env): Promise<Respons
       port: header.port,
       payload: header.payload,
       responseHeader: new Uint8Array([header.version, 0]),
-      datagram: isUdp ? createDnsProxy : isMux ? (reply) => handleVlessMux(reply, proxyTarget) : null,
+      datagram: isUdp ? createDnsProxy : isMux ? (reply) => handleMux(reply, proxyTarget) : null,
     };
   };
 
