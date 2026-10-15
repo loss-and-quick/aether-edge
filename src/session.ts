@@ -202,10 +202,17 @@ export async function queryDoh(query: Uint8Array): Promise<Uint8Array | null> {
   }
 }
 
-/** Handles datagram chunks of one UDP session; `reply` sends a framed answer to the client. */
+/** Handles framed datagram-style chunks; `reply` sends an answer back to the client. */
+export interface DatagramHandler {
+  write(chunk: Uint8Array): Promise<void>;
+  close?(): void;
+}
+
+export type DatagramSession = DatagramHandler | ((chunk: Uint8Array) => Promise<void>);
+
 export type DatagramFactory = (
   reply: (frame: Uint8Array) => void,
-) => (chunk: Uint8Array) => Promise<void>;
+) => DatagramSession;
 
 export interface SessionRequest {
   hostname: string;
@@ -249,7 +256,7 @@ function runSession(
 ): void {
   let remote: Socket | null = null;
   let remoteWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
-  let dnsHandler: ((chunk: Uint8Array) => Promise<void>) | null = null;
+  let datagramHandler: DatagramHandler | null = null;
   let headerParsed = false;
   let subsequentDataSent = false;
   let closed = false;
@@ -267,6 +274,12 @@ function runSession(
       // Ignore pending writes.
     }
 
+    try {
+      datagramHandler?.close?.();
+    } catch {
+      // Ignore datagram cleanup issues.
+    }
+
     safeCloseSocket(remote);
     safeCloseWS(webSocket, code, reason);
   };
@@ -277,8 +290,8 @@ function runSession(
     }
 
     if (headerParsed) {
-      if (dnsHandler) {
-        await dnsHandler(chunk);
+      if (datagramHandler) {
+        await datagramHandler.write(chunk);
       } else if (remoteWriter) {
         subsequentDataSent = true;
         await remoteWriter.write(chunk);
@@ -292,7 +305,7 @@ function runSession(
 
     if (header.datagram) {
       let headerSent = false;
-      dnsHandler = header.datagram((frame) => {
+      const datagramSession = header.datagram((frame) => {
         if (closed || webSocket.readyState !== WS_OPEN) {
           return;
         }
@@ -301,8 +314,11 @@ function runSession(
         headerSent = true;
       });
 
+      datagramHandler =
+        typeof datagramSession === 'function' ? { write: datagramSession } : datagramSession;
+
       if (header.payload.length) {
-        await dnsHandler(header.payload);
+        await datagramHandler.write(header.payload);
       }
       return;
     }

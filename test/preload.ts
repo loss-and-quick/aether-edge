@@ -11,12 +11,22 @@ if (typeof (globalThis as any).WebSocketPair === 'undefined') {
   };
 }
 
+const defaultConnect = () => ({
+  opened: Promise.resolve(),
+  closed: Promise.resolve(),
+  readable: new ReadableStream<Uint8Array>(),
+  writable: new WritableStream<Uint8Array>(),
+  close: () => Promise.resolve(),
+});
+
+(globalThis as any).__cloudflareSocketsMock = {
+  connectImpl: defaultConnect,
+  reset() {
+    this.connectImpl = defaultConnect;
+  },
+};
+
 mock.module('cloudflare:sockets', () => ({
-  connect: () => ({
-    opened: Promise.resolve(),
-    closed: Promise.resolve(),
-    readable: new ReadableStream(),
-    writable: new WritableStream(),
-    close: () => Promise.resolve(),
-  }),
+  connect: (target: { hostname: string; port: number }) =>
+    (globalThis as any).__cloudflareSocketsMock.connectImpl(target),
 }));

@@ -1,3 +1,4 @@
+import { MUX_HOST, handleVlessMux } from './mux';
 import {
   acceptWebSocket,
   concat,
@@ -5,6 +6,7 @@ import {
   bytesEqual,
   parseProxyTarget,
   queryDoh,
+  resolveProxyTarget,
   type Env,
   type RequestParser,
 } from './session';
@@ -19,11 +21,11 @@ export { decodeBase64, parseProxyTarget };
  *   [1..16]        user UUID (16 bytes)
  *   [17]           addon length M
  *   [18..18+M)     addon bytes (ignored)
- *   [18+M]         command (1 = TCP, 2 = UDP)
- *   [+1..+2]       port (big endian)
- *   [+3]           address type (1 = IPv4, 2 = domain, 3 = IPv6)
- *   [...]          address
- *   [...]          initial payload
+ *   [18+M]         command (1 = TCP, 2 = UDP, 3 = Mux.Cool)
+ *   [+1..+2]       port (big endian) for TCP/UDP only
+ *   [+3]           address type (1 = IPv4, 2 = domain, 3 = IPv6) for TCP/UDP only
+ *   [...]          address for TCP/UDP only
+ *   [...]          initial payload (for MUX: the first Mux frame bytes)
  *
  * Response header (sent once, before the first upstream bytes): [version, 0].
  */
@@ -38,6 +40,7 @@ interface VlessHeader {
 
 const CMD_TCP = 1;
 const CMD_UDP = 2;
+const CMD_MUX = 3;
 
 const ATYP_IPV4 = 1;
 const ATYP_DOMAIN = 2;
@@ -57,7 +60,7 @@ export function uuidToBytes(uuid: string): Uint8Array | null {
 }
 
 export function parseVlessHeader(data: Uint8Array, expectedUUID: Uint8Array): VlessHeader {
-  if (data.length < 24) {
+  if (data.length < 19) {
     throw new Error('vless header too short');
   }
 
@@ -72,13 +75,21 @@ export function parseVlessHeader(data: Uint8Array, expectedUUID: Uint8Array): Vl
 
   const addonLength = data[17];
   let offset = 18 + addonLength;
-  if (data.length < offset + 4) {
+  if (data.length < offset + 1) {
     throw new Error('vless header truncated');
   }
 
   const command = data[offset++];
+  if (command === CMD_MUX) {
+    return { version, command, hostname: MUX_HOST, port: 0, payload: data.subarray(offset) };
+  }
+
   if (command !== CMD_TCP && command !== CMD_UDP) {
     throw new Error(`unsupported command ${command}`);
+  }
+
+  if (data.length < offset + 3) {
+    throw new Error('vless header truncated');
   }
 
   const port = (data[offset] << 8) | data[offset + 1];
@@ -180,9 +191,12 @@ export async function handleVlessWS(request: Request, env: Env): Promise<Respons
     return new Response('UUID is not configured', { status: 500 });
   }
 
+  const proxyTarget = resolveProxyTarget(new URL(request.url), env);
+
   const parse: RequestParser = (chunk) => {
     const header = parseVlessHeader(chunk, expectedUUID);
     const isUdp = header.command === CMD_UDP;
+    const isMux = header.command === CMD_MUX;
     if (isUdp && header.port !== 53) {
       throw new Error('only UDP port 53 (DNS) is supported');
     }
@@ -192,7 +206,7 @@ export async function handleVlessWS(request: Request, env: Env): Promise<Respons
       port: header.port,
       payload: header.payload,
       responseHeader: new Uint8Array([header.version, 0]),
-      datagram: isUdp ? createDnsProxy : null,
+      datagram: isUdp ? createDnsProxy : isMux ? (reply) => handleVlessMux(reply, proxyTarget) : null,
     };
   };
 

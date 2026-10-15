@@ -13,8 +13,8 @@
     "build:styles": "bun run scripts/embed-styles.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "format": "biome format --write package.json tsconfig.json biome.json src/index.tsx src/session.ts src/sub.ts src/trojan.ts src/ui.tsx src/vless.ts scripts/embed-styles.mjs",
-    "lint": "biome lint src/index.tsx src/session.ts src/sub.ts src/trojan.ts src/ui.tsx src/vless.ts scripts/embed-styles.mjs",
+    "format": "biome format --write package.json tsconfig.json biome.json src/index.tsx src/mux.ts src/session.ts src/sub.ts src/trojan.ts src/ui.tsx src/vless.ts scripts/embed-styles.mjs",
+    "lint": "biome lint src/index.tsx src/mux.ts src/session.ts src/sub.ts src/trojan.ts src/ui.tsx src/vless.ts scripts/embed-styles.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test --preload ./test/preload.ts",
     "check": "bun run lint && bun run typecheck"

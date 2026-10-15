@@ -107,9 +107,25 @@ describe('VLESS Protocol Wire Format', () => {
     expect(() => parseVlessHeader(raw, expectedUUID)).toThrow('invalid user');
   });
 
-  it('rejects unsupported command (e.g. MUX command 3)', () => {
-    const raw = buildHeader({ command: 3 });
-    expect(() => parseVlessHeader(raw, expectedUUID)).toThrow('unsupported command 3');
+  it('accepts command 3 and treats the remaining bytes as mux payload', () => {
+    const payload = new Uint8Array([0xaa, 0xbb, 0xcc]);
+    const raw = new Uint8Array(19 + payload.length);
+    raw[0] = 0;
+    raw.set(expectedUUID, 1);
+    raw[17] = 0;
+    raw[18] = 3;
+    raw.set(payload, 19);
+
+    const parsed = parseVlessHeader(raw, expectedUUID);
+    expect(parsed.command).toBe(3);
+    expect(parsed.hostname).toBe('v1.mux.cool');
+    expect(parsed.port).toBe(0);
+    expect(Array.from(parsed.payload)).toEqual([0xaa, 0xbb, 0xcc]);
+  });
+
+  it('rejects unsupported command values', () => {
+    const raw = buildHeader({ command: 9 });
+    expect(() => parseVlessHeader(raw, expectedUUID)).toThrow('unsupported command 9');
   });
 
   it('rejects invalid port 0', () => {
