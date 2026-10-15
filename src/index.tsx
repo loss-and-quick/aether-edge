@@ -163,7 +163,8 @@ export default {
     try {
       if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
         const { pathname } = new URL(request.url);
-        if (pathname === TROJAN_WS_PATH || pathname.startsWith(`${TROJAN_WS_PATH}/`)) {
+        const cleanPath = decodeURIComponent(pathname).split('?')[0].replace(/\/+$/, '') || '/';
+        if (cleanPath === TROJAN_WS_PATH || cleanPath.startsWith(`${TROJAN_WS_PATH}/`)) {
           return await handleTrojanWS(request, env);
         }
 

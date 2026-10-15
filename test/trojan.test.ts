@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'bun:test';
+import worker from '../src/index';
 import {
   generateBase64,
   generateClashYaml,
@@ -200,5 +201,16 @@ describe('Trojan subscription output', () => {
       headers: { Host: 'example.com' },
     });
     expect(json.outbounds.find((o: { type: string }) => o.type === 'vless').uuid).toBe('uuid-1');
+  });
+
+  it('routes percent-encoded trojan paths to trojan handler', async () => {
+    const response = await worker.fetch(
+      new Request('https://example.com/trojan%3Fed=2048', {
+        headers: { Upgrade: 'websocket' },
+      }),
+      { UUID: 'c4f9a17e-52db-4b63-9e12-88d4bfd19e07' },
+      {} as any,
+    );
+    expect(response.status).toBe(101);
   });
 });
