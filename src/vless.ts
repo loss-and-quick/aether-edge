@@ -2,6 +2,7 @@ import { MUX_HOST, handleMux } from './mux';
 import {
   acceptWebSocket,
   concat,
+  createLengthPrefixedDnsProxy,
   decodeBase64,
   bytesEqual,
   parseProxyTarget,
@@ -145,41 +146,6 @@ export function parseVlessHeader(data: Uint8Array, expectedUUID: Uint8Array): Vl
   return { version, command, hostname, port, payload: data.subarray(offset) };
 }
 
-function createDnsProxy(
-  onReply: (frame: Uint8Array) => void,
-): (chunk: Uint8Array) => Promise<void> {
-  let pending: Uint8Array = new Uint8Array(0);
-
-  const resolve = async (query: Uint8Array): Promise<void> => {
-    const answer = await queryDoh(query);
-    if (!answer) {
-      return;
-    }
-
-    const frame = new Uint8Array(2 + answer.length);
-    new DataView(frame.buffer).setUint16(0, answer.length);
-    frame.set(answer, 2);
-    onReply(frame);
-  };
-
-  return async (chunk) => {
-    pending = pending.length ? concat(pending, chunk) : chunk;
-    const jobs: Promise<void>[] = [];
-
-    while (pending.length >= 2) {
-      const length = (pending[0] << 8) | pending[1];
-      if (pending.length < 2 + length) {
-        break;
-      }
-
-      jobs.push(resolve(pending.slice(2, 2 + length)) as Promise<void>);
-      pending = pending.subarray(2 + length) as Uint8Array;
-    }
-
-    await Promise.all(jobs);
-  };
-}
-
 export async function handleVlessWS(request: Request, env: Env): Promise<Response> {
   if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('Expected WebSocket upgrade', { status: 426 });
@@ -206,7 +172,7 @@ export async function handleVlessWS(request: Request, env: Env): Promise<Respons
       port: header.port,
       payload: header.payload,
       responseHeader: new Uint8Array([header.version, 0]),
-      datagram: isUdp ? createDnsProxy : isMux ? (reply) => handleMux(reply, proxyTarget) : null,
+      datagram: isUdp ? createLengthPrefixedDnsProxy : isMux ? (reply) => handleMux(reply, proxyTarget) : null,
     };
   };
 

@@ -2,6 +2,7 @@ import { connect } from 'cloudflare:sockets';
 import {
   concat,
   isCloudflareIPv4,
+  queryDoh,
   safeCloseSocket,
   type DatagramHandler,
   type ProxyTarget,
@@ -52,10 +53,18 @@ export type MuxFrame =
       payload: Uint8Array;
     };
 
-interface MuxSession {
+interface MuxTcpSession {
+  type: 'tcp';
   socket: Socket;
   writer: WritableStreamDefaultWriter<Uint8Array>;
 }
+
+interface MuxUdpSession {
+  type: 'udp';
+  write: (chunk: Uint8Array) => Promise<void>;
+}
+
+type MuxSession = MuxTcpSession | MuxUdpSession;
 
 interface OpenedMuxSocket {
   socket: Socket;
@@ -302,6 +311,26 @@ class MuxSessionManager implements DatagramHandler {
   private async openSession(frame: Extract<MuxFrame, { status: typeof MUX_STATUS_NEW }>): Promise<void> {
     this.closeSession(frame.sessionId, false);
 
+    if (frame.network === MUX_NETWORK_UDP) {
+      if (frame.port === 53) {
+        const resolve = async (query: Uint8Array): Promise<void> => {
+          const answer = await queryDoh(query);
+          if (answer && !this.closed) {
+            this.reply(serializeMuxDataFrame(frame.sessionId, answer));
+          }
+        };
+        const session: MuxSession = { type: 'udp', write: resolve };
+        this.sessions.set(frame.sessionId, session);
+        if (frame.payload.length > 0) {
+          await resolve(frame.payload);
+        }
+        return;
+      }
+
+      this.reply(serializeMuxEndFrame(frame.sessionId));
+      return;
+    }
+
     if (frame.network !== MUX_NETWORK_TCP) {
       this.reply(serializeMuxEndFrame(frame.sessionId));
       return;
@@ -329,7 +358,7 @@ class MuxSessionManager implements DatagramHandler {
       return;
     }
 
-    const session: MuxSession = { socket: opened.socket, writer: opened.writer };
+    const session: MuxSession = { type: 'tcp', socket: opened.socket, writer: opened.writer };
     this.sessions.set(frame.sessionId, session);
     void this.pipeSession(frame.sessionId, session);
   }
@@ -342,13 +371,17 @@ class MuxSessionManager implements DatagramHandler {
     }
 
     try {
-      await session.writer.write(payload);
+      if (session.type === 'tcp') {
+        await session.writer.write(payload);
+      } else {
+        await session.write(payload);
+      }
     } catch {
       this.closeSession(sessionId, true);
     }
   }
 
-  private async pipeSession(sessionId: number, session: MuxSession): Promise<void> {
+  private async pipeSession(sessionId: number, session: MuxTcpSession): Promise<void> {
     const reader = session.socket.readable.getReader();
 
     try {
@@ -384,13 +417,15 @@ class MuxSessionManager implements DatagramHandler {
     }
 
     this.sessions.delete(sessionId);
-    try {
-      session.writer.releaseLock();
-    } catch {
-      // Ignore pending writes.
-    }
+    if (session.type === 'tcp') {
+      try {
+        session.writer.releaseLock();
+      } catch {
+        // Ignore pending writes.
+      }
 
-    safeCloseSocket(session.socket);
+      safeCloseSocket(session.socket);
+    }
     if (sendEnd && !this.closed) {
       this.reply(serializeMuxEndFrame(sessionId));
     }

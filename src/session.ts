@@ -202,6 +202,45 @@ export async function queryDoh(query: Uint8Array): Promise<Uint8Array | null> {
   }
 }
 
+/**
+ * Handles length-prefixed DNS datagrams ([uint16 length] [DNS payload]).
+ * Used by VLESS UDP port 53 and MUX.Cool UDP port 53 (XUDP).
+ */
+export function createLengthPrefixedDnsProxy(
+  onReply: (frame: Uint8Array) => void,
+): (chunk: Uint8Array) => Promise<void> {
+  let pending: Uint8Array = new Uint8Array(0);
+
+  const resolve = async (query: Uint8Array): Promise<void> => {
+    const answer = await queryDoh(query);
+    if (!answer) {
+      return;
+    }
+
+    const frame = new Uint8Array(2 + answer.length);
+    new DataView(frame.buffer).setUint16(0, answer.length);
+    frame.set(answer, 2);
+    onReply(frame);
+  };
+
+  return async (chunk) => {
+    pending = pending.length ? concat(pending, chunk) : chunk;
+    const jobs: Promise<void>[] = [];
+
+    while (pending.length >= 2) {
+      const length = (pending[0] << 8) | pending[1];
+      if (pending.length < 2 + length) {
+        break;
+      }
+
+      jobs.push(resolve(pending.slice(2, 2 + length)) as Promise<void>);
+      pending = pending.subarray(2 + length) as Uint8Array;
+    }
+
+    await Promise.all(jobs);
+  };
+}
+
 /** Handles framed datagram-style chunks; `reply` sends an answer back to the client. */
 export interface DatagramHandler {
   write(chunk: Uint8Array): Promise<void>;

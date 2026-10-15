@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import type { Socket } from 'cloudflare:sockets';
 import {
   MUX_NETWORK_TCP,
+  MUX_NETWORK_UDP,
   MUX_STATUS_DATA,
   MUX_STATUS_END,
   MUX_STATUS_KEEP_ALIVE,
@@ -292,12 +293,37 @@ describe('Mux session manager', () => {
     const outboundFrames: Uint8Array[] = [];
     const handler = handleMux((frame) => outboundFrames.push(frame), null);
 
-    await handler.write(buildNewFrame(7, 2, 53, 2, encodeDomain('dns.google')));
+    await handler.write(buildNewFrame(7, 2, 1234, 2, encodeDomain('dns.google')));
     expect(connectCalls).toBe(0);
     expect(Array.from(outboundFrames[0])).toEqual(Array.from(serializeMuxEndFrame(7)));
 
     await handler.write(buildNewFrame(8, MUX_NETWORK_TCP, 443, 2, encodeDomain('beta.example')));
     handler.close?.();
     expect(socket.isClosed()).toBe(true);
+  });
+
+  it('handles UDP port 53 DNS queries via DoH inside Mux', async () => {
+    const originalFetch = globalThis.fetch;
+    const dnsAnswer = new Uint8Array([0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01]);
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      return new Response(dnsAnswer, {
+        status: 200,
+        headers: { 'content-type': 'application/dns-message' },
+      });
+    }) as any;
+
+    try {
+      const outboundFrames: Uint8Array[] = [];
+      const handler = handleMux((frame) => outboundFrames.push(frame), null);
+
+      const dnsQuery = new Uint8Array([0x12, 0x34, 0x01, 0x00, 0x00, 0x01]);
+      await handler.write(buildNewFrame(9, MUX_NETWORK_UDP, 53, 2, encodeDomain('8.8.8.8'), dnsQuery));
+      await flushTasks();
+
+      expect(outboundFrames.length).toBe(1);
+      expect(Array.from(outboundFrames[0])).toEqual(Array.from(serializeMuxDataFrame(9, dnsAnswer)));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

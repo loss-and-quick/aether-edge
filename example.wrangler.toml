@@ -5,6 +5,6 @@ compatibility_date = "2025-01-01"
 [vars]
 HOST = "domain"
 UUID = "c4f9a17e-52db-4b63-9e12-88d4bfd19e07"
-PROXYIP = ""
+PROXYIP = "proxyip.fxxk.dedyn.io"
 SUBNAME = "name"
 ADD = "hosts"
